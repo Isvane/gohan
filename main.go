@@ -47,6 +47,24 @@ func (d *Database) getUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (d *Database) updateUserHandler(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	new_name := r.PathValue("new_name")
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	value, ok := d.UserInfo[name]
+	if ok {
+		d.UserInfo[new_name] = value
+		delete(d.UserInfo, name)
+		fmt.Fprintf(w, "Updated %q to %q", name, new_name)
+	} else {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+}
+
 func (d *Database) deleteUserHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
@@ -84,6 +102,7 @@ func main() {
 	mux.HandleFunc("POST /register/{name}/{age}", db.registerUserHandler)
 	mux.HandleFunc("GET /user/{name}", db.getUserHandler)
 	mux.HandleFunc("DELETE /user/{name}", db.deleteUserHandler)
+	mux.HandleFunc("PUT /user/{name}/{new_name}", db.updateUserHandler)
 
 	s := &http.Server{
 		Addr:           ":8080",
