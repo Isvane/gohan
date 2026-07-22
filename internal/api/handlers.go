@@ -1,16 +1,13 @@
-package main
+package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"html"
-	"log"
 	"net/http"
-	"os/signal"
 	"sync"
-	"syscall"
-	"time"
+
+	models "github.com/Isvane/gohan/internal/model"
 )
 
 type Database struct {
@@ -18,17 +15,8 @@ type Database struct {
 	UserInfo map[string]int
 }
 
-type User struct {
-	Name string `json:"name"`
-	Age  int    `json:"age"`
-}
-
-type MessageResponse struct {
-	Message string `json:"message"`
-}
-
-func (d *Database) registerUserHandler(w http.ResponseWriter, r *http.Request) {
-	var user User
+func (d *Database) RegisterUserHandler(w http.ResponseWriter, r *http.Request) {
+	var user models.User
 
 	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
@@ -61,7 +49,7 @@ func (d *Database) registerUserHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
-func (d *Database) getUserHandler(w http.ResponseWriter, r *http.Request) {
+func (d *Database) GetUserHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
 	d.mu.RLock()
@@ -74,13 +62,13 @@ func (d *Database) getUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(User{Name: name, Age: value})
+	json.NewEncoder(w).Encode(models.User{Name: name, Age: value})
 }
 
-func (d *Database) updateUserHandler(w http.ResponseWriter, r *http.Request) {
+func (d *Database) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
-	var updatedUser User
+	var updatedUser models.User
 	err := json.NewDecoder(r.Body).Decode(&updatedUser)
 	if err != nil {
 		http.Error(w, "Invalid JSON payload: "+err.Error(), http.StatusBadRequest)
@@ -113,7 +101,7 @@ func (d *Database) updateUserHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(updatedUser)
 }
 
-func (d *Database) deleteUserHandler(w http.ResponseWriter, r *http.Request) {
+func (d *Database) DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
 	d.mu.Lock()
@@ -128,62 +116,11 @@ func (d *Database) deleteUserHandler(w http.ResponseWriter, r *http.Request) {
 	delete(d.UserInfo, name)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(MessageResponse{
+	json.NewEncoder(w).Encode(models.MessageResponse{
 		Message: fmt.Sprintf("Successfully deleted user %q", name),
 	})
 }
 
-func echoHandler(w http.ResponseWriter, r *http.Request) {
+func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Hello, %q", html.EscapeString(r.PathValue("arg")))
-}
-
-func logMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s Kyaa~", r.Method, r.URL.Path)
-		next.ServeHTTP(w, r)
-	})
-}
-
-func main() {
-	db := &Database{
-		UserInfo: make(map[string]int),
-	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("GET /echo/{arg}", echoHandler)
-	mux.HandleFunc("POST /user", db.registerUserHandler)
-	mux.HandleFunc("GET /user/{name}", db.getUserHandler)
-	mux.HandleFunc("DELETE /user/{name}", db.deleteUserHandler)
-	mux.HandleFunc("PUT /user/{name}", db.updateUserHandler)
-
-	s := &http.Server{
-		Addr:           ":8080",
-		Handler:        logMiddleware(mux),
-		ReadTimeout:    10 * time.Second,
-		WriteTimeout:   10 * time.Second,
-		MaxHeaderBytes: 1 << 20,
-	}
-
-	go func() {
-		log.Printf("Server listening on http://localhost:8080")
-		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("HTTP server error: %v", err)
-		}
-	}()
-
-	<-ctx.Done()
-	log.Println("Shutdown signal received")
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := s.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Shutdown error: %v", err)
-	}
-
-	log.Println("Gracefully shutting down.")
 }
