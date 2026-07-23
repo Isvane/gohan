@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"log"
+	"errors"
 	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -15,12 +16,16 @@ import (
 )
 
 func main() {
-	go func() {
-		log.Println("pprof server listening on :6060")
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
-
 	logger := slog.Default()
+
+	go func() {
+		slog.Info("pprof server listening on :6060")
+
+		err := http.ListenAndServe("localhost:6060", nil)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("HTTP server error", "error", err)
+		}
+	}()
 
 	repo := repository.NewUserRepo()
 	db := &api.Database{
@@ -41,27 +46,29 @@ func main() {
 	s := &http.Server{
 		Addr:           ":8080",
 		Handler:        api.LogMiddleware(logger)(mux),
+		ErrorLog:       slog.NewLogLogger(logger.Handler(), slog.LevelError),
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
 
 	go func() {
-		log.Printf("Server listening on http://localhost:8080")
+		slog.Info("Server listening on http://localhost:8080")
 		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("HTTP server error: %v", err)
+			slog.Error("HTTP server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("Shutdown signal received")
+	slog.Info("Shutdown signal received")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := s.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Shutdown error: %v", err)
+		slog.Error("Shutdown error", "error", err)
 	}
 
-	log.Println("Gracefully shutting down.")
+	slog.Info("Gracefully shutting down.")
 }
