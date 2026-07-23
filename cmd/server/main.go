@@ -5,6 +5,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	_ "net/http/pprof"
 	"os/signal"
 	"syscall"
 	"time"
@@ -14,6 +15,11 @@ import (
 )
 
 func main() {
+	go func() {
+		log.Println("pprof server listening on :6060")
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	logger := slog.Default()
 
 	repo := repository.NewUserRepo()
